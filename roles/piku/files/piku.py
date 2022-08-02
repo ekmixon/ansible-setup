@@ -220,7 +220,7 @@ def exit_if_invalid(app):
 
     app = sanitize_app_name(app)
     if not exists(join(APP_ROOT, app)):
-        echo("Error: app '{}' not found.".format(app), fg='red')
+        echo(f"Error: app '{app}' not found.", fg='red')
         exit(1)
     return app
 
@@ -259,7 +259,7 @@ def setup_authorized_keys(ssh_fingerprint, script_path, pubkey):
 
 def parse_procfile(filename):
     """Parses a Procfile and returns the worker types. Only one worker of each type is allowed."""
-    
+
     workers = {}
     if not exists(filename):
         return None
@@ -269,14 +269,13 @@ def parse_procfile(filename):
                 kind, command = map(lambda x: x.strip(), line.split(":", 1))
                 workers[kind] = command
             except:
-                echo("Warning: unrecognized Procfile entry '{}'".format(line), fg='yellow')
+                echo(f"Warning: unrecognized Procfile entry '{line}'", fg='yellow')
     if not len(workers):
         return {}
     # WSGI trumps regular web workers
-    if 'wsgi' in workers:
-        if 'web' in workers:
-            echo("Warning: found both 'wsgi' and 'web' workers, disabling 'web'", fg='yellow')
-            del(workers['web'])
+    if 'wsgi' in workers and 'web' in workers:
+        echo("Warning: found both 'wsgi' and 'web' workers, disabling 'web'", fg='yellow')
+        del(workers['web'])
     return workers 
 
 
@@ -301,19 +300,19 @@ def command_output(cmd):
 
 def parse_settings(filename, env={}):
     """Parses a settings file and returns a dict with environment variables"""
-    
+
     if not exists(filename):
         return {}
-        
+
     with open(filename, 'r') as settings:
         for line in settings:
-            if '#' == line[0]: # allow for comments
+            if line[0] == '#': # allow for comments
                 continue
             try:
                 k, v = map(lambda x: x.strip(), line.split("=", 1))
                 env[k] = expandvars(v, env)
             except:
-                echo("Error: malformed setting '{}', ignoring file.".format(line), fg='red')
+                echo(f"Error: malformed setting '{line}', ignoring file.", fg='red')
                 return {}
     return env
 
@@ -321,18 +320,16 @@ def parse_settings(filename, env={}):
 def check_requirements(binaries):
     """Checks if all the binaries exist and are executable"""
 
-    echo("-----> Checking requirements: {}".format(binaries), fg='green')
+    echo(f"-----> Checking requirements: {binaries}", fg='green')
     requirements = list(map(which, binaries))
     echo(str(requirements))
 
-    if None in requirements:
-        return False
-    return True
+    return None not in requirements
     
 
 def do_deploy(app, deltas={}):
     """Deploy an app by resetting the work directory"""
-    
+
     app_path = join(APP_ROOT, app)
     procfile = join(app_path, 'Procfile')
     log_path = join(LOG_ROOT, app)
@@ -341,7 +338,7 @@ def do_deploy(app, deltas={}):
 
     env = {'GIT_WORK_DIR': app_path}
     if exists(app_path):
-        echo("-----> Deploying app '{}'".format(app), fg='green')
+        echo(f"-----> Deploying app '{app}'", fg='green')
         call('git fetch --quiet', cwd=app_path, env=env, shell=True)
         call('git reset --hard origin/master', cwd=app_path, env=env, shell=True)
         call('git submodule init', cwd=app_path, env=env, shell=True)
@@ -355,8 +352,9 @@ def do_deploy(app, deltas={}):
             if "release" in workers:
                 echo("-----> Releasing", fg='green')
                 settings["ENV_ROOT"] = join(ENV_ROOT, app)
-                retval = call(workers["release"], cwd=app_path, env=settings, shell=True)
-                if retval:
+                if retval := call(
+                    workers["release"], cwd=app_path, env=settings, shell=True
+                ):
                     exit(retval)
                 workers.pop("release", None)
             if exists(join(app_path, 'requirements.txt')):
@@ -378,9 +376,9 @@ def do_deploy(app, deltas={}):
                 echo("-----> Auto-restarting.", fg='green')
                 do_restart(app)
         else:
-            echo("Error: Invalid Procfile for app '{}'.".format(app), fg='red')
+            echo(f"Error: Invalid Procfile for app '{app}'.", fg='red')
     else:
-        echo("Error: app '{}' not found.".format(app), fg='red')
+        echo(f"Error: app '{app}' not found.", fg='red')
 
 
 def deploy_java(app, deltas={}):
@@ -396,22 +394,21 @@ def deploy_go(app, deltas={}):
 
     first_time = False
     if not exists(go_path):
-        echo("-----> Creating GOPATH for '{}'".format(app), fg='green')
+        echo(f"-----> Creating GOPATH for '{app}'", fg='green')
         makedirs(go_path)
-        # copy across a pre-built GOPATH to save provisioning time 
-        call('cp -a $HOME/gopath {}'.format(app), cwd=ENV_ROOT, shell=True)
+        # copy across a pre-built GOPATH to save provisioning time
+        call(f'cp -a $HOME/gopath {app}', cwd=ENV_ROOT, shell=True)
         first_time = True
 
-    if exists(deps):
-        if first_time or getmtime(deps) > getmtime(go_path):
-            echo("-----> Running godep for '{}'".format(app), fg='green')
-            env = {
-                'GOPATH': '$HOME/gopath',
-                'GOROOT': '$HOME/go',
-                'PATH': '$PATH:$HOME/go/bin',
-                'GO15VENDOREXPERIMENT': '1'
-            }
-            call('godep update ...', cwd=join(APP_ROOT, app), env=env, shell=True)
+    if exists(deps) and (first_time or getmtime(deps) > getmtime(go_path)):
+        echo(f"-----> Running godep for '{app}'", fg='green')
+        env = {
+            'GOPATH': '$HOME/gopath',
+            'GOROOT': '$HOME/go',
+            'PATH': '$PATH:$HOME/go/bin',
+            'GO15VENDOREXPERIMENT': '1'
+        }
+        call('godep update ...', cwd=join(APP_ROOT, app), env=env, shell=True)
     spawn_app(app, deltas)
 
 
@@ -424,33 +421,33 @@ def deploy_node(app, deltas={}):
 
     first_time = False
     if not exists(deps):
-        echo("-----> Creating node_modules for '{}'".format(app), fg='green')
+        echo(f"-----> Creating node_modules for '{app}'", fg='green')
         makedirs(deps)
         first_time = True
 
-    if exists(deps):
-        if first_time or getmtime(deps) > getmtime(node_path):
-            echo("-----> Running npm for '{}'".format(app), fg='green')
-            env = {
-                'NODE_PATH': '{}/lib/node_modules'.format(node_path),
-                'NPM_CONFIG_PREFIX': node_path,
-            }
-            if exists(env_file):
-                env.update(parse_settings(env_file, env))
-            call('npm install', cwd=join(APP_ROOT, app), env=env, shell=True)
+    if exists(deps) and (first_time or getmtime(deps) > getmtime(node_path)):
+        echo(f"-----> Running npm for '{app}'", fg='green')
+        env = {
+            'NODE_PATH': f'{node_path}/lib/node_modules',
+            'NPM_CONFIG_PREFIX': node_path,
+        }
+
+        if exists(env_file):
+            env |= parse_settings(env_file, env)
+        call('npm install', cwd=join(APP_ROOT, app), env=env, shell=True)
     spawn_app(app, deltas)
 
 
 def deploy_python(app, deltas={}):
     """Deploy a Python application"""
-    
+
     virtualenv_path = join(ENV_ROOT, app)
     requirements = join(APP_ROOT, app, 'requirements.txt')
     env_file = join(APP_ROOT, app, 'ENV')
     # Peek at environment variables shipped with repo (if any) to determine version
     env = {}
     if exists(env_file):
-        env.update(parse_settings(env_file, env))
+        env |= parse_settings(env_file, env)
 
     # TODO: improve version parsing
     # pylint: disable=unused-variable
@@ -458,7 +455,7 @@ def deploy_python(app, deltas={}):
 
     first_time = False
     if not exists(virtualenv_path):
-        echo("-----> Creating virtualenv for '{}'".format(app), fg='green')
+        echo(f"-----> Creating virtualenv for '{app}'", fg='green')
         makedirs(virtualenv_path)
         call('virtualenv --python=python{version:d} {app:s}'.format(**locals()), cwd=ENV_ROOT, shell=True)
         first_time = True
@@ -467,8 +464,8 @@ def deploy_python(app, deltas={}):
     exec(open(activation_script).read(), dict(__file__=activation_script))
 
     if first_time or getmtime(requirements) > getmtime(virtualenv_path):
-        echo("-----> Running pip for '{}'".format(app), fg='green')
-        call('pip install -r {}'.format(requirements), cwd=virtualenv_path, shell=True)
+        echo(f"-----> Running pip for '{app}'", fg='green')
+        call(f'pip install -r {requirements}', cwd=virtualenv_path, shell=True)
     spawn_app(app, deltas)
 
  
